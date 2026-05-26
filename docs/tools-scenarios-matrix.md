@@ -1,6 +1,7 @@
 # TriageFlow — Tools × Scenarios Matrix
 
-> Complete development process map: every scenario, every tool, every gate.  
+> Complete development process map: every scenario, every tool, every gate.
+> **For domain-specific scenarios:** [`tools-scenarios-backend.md`](tools-scenarios-backend.md) (Symfony) | [`tools-scenarios-frontend.md`](tools-scenarios-frontend.md) (React)
 > Origin tags: 🦸 Superpowers | 🧔 Matt Pocock | 🏠 Project (triageflow)
 
 ---
