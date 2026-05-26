@@ -1,0 +1,61 @@
+{
+  "project": "triageflow",
+  "version": "1.0.0",
+  "description": "AI-assisted patient triage showcase — Symfony 7.4 + React + symfony/ai",
+  "agentConfig": {
+    "primaryAgent": "OpenAgent",
+    "projectAgentsMd": "../../agents.md",
+    "subagents": {
+      "backend": {
+        "path": "backend/agents.md",
+        "defaultAgent": "symfony-specialist"
+      },
+      "frontend": {
+        "path": "frontend/agents.md",
+        "defaultAgent": "frontend-developer"
+      }
+    }
+  },
+  "skills": {
+    "directory": ".opencode/skills",
+    "projectSkills": ["triageflow"],
+    "coreSkills": [
+      "brainstorming",
+      "test-driven-development",
+      "systematic-debugging",
+      "verification-before-completion",
+      "receiving-code-review"
+    ]
+  },
+  "conventions": {
+    "preCommitChecks": [
+      "cd backend && php bin/phpunit",
+      "cd backend && php vendor/bin/phpstan analyse",
+      "cd backend && php vendor/bin/php-cs-fixer fix --dry-run",
+      "cd frontend && npm run test",
+      "cd frontend && npm run typecheck",
+      "cd frontend && npm run lint"
+    ],
+    "commitStyle": "semantic",
+    "testCoverage": 80,
+    "requireBrainstorming": true,
+    "requireTdd": true
+  },
+  "environment": {
+    "php": "8.4+",
+    "node": "22+",
+    "symfony": "7.4.*",
+    "database": "postgresql:16",
+    "aiPlatform": {
+      "provider": "deepseek",
+      "models": ["deepseek-chat", "deepseek-reasoner"],
+      "package": "symfony/ai",
+      "configPath": "backend/config/packages/ai.yaml"
+    }
+  },
+  "contextFiles": {
+    "backend": "backend/agents.md",
+    "frontend": "frontend/agents.md",
+    "triageflowSkill": ".opencode/skills/triageflow/SKILL.md"
+  }
+}

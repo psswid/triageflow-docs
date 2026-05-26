@@ -1,0 +1,23 @@
+# Separate repos (not tracked by this docs-repo)
+backend/
+frontend/
+
+# Dependencies (from .opencode/)
+.opencode/node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# OpenCode temp files
+.tmp/
