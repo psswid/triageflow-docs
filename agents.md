@@ -205,3 +205,17 @@ Update this file when:
 - New bounded contexts are added
 - Agent/Skill mappings change
 - Workflow rules are refined
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub Issues in `psswid/triageflow-docs`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Uses the default five canonical triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: one `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
