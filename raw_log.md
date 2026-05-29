@@ -139,6 +139,7 @@ Tests used hardcoded emails → stale DB caused unique constraint violations on 
 - **DAMA bundle** — plan referenced it but was never installed; removed from bundles.php, tests use direct DB (no transaction isolation)
 - **UUID generator** — `doctrine.uuid_generator` throws `UuidFactory` class-not-found; switched to manual `Uuid::v4()` in constructor
 - **Test DB isolation** — no DAMA = no transactional rollback; fixed with `uniqid()` emails to prevent cross-test contamination
+- **JWT private key permissions** (`c46f04b`) — `private.pem` was 0600 owned by host user; PHP-FPM runs as `www-data` inside Docker so login returned 500 "Signature key does not exist or is not readable". Fixed with `chmod 644` + Dockerfile RUN command.
 
 ### Push Status
 

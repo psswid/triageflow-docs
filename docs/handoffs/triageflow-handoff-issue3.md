@@ -12,9 +12,9 @@ Implemented JWT-based auth across Symfony backend and React frontend:
 
 | Repo | Remote | Head | Commits |
 |------|--------|------|---------|
-| Backend | `psswid/triageflow-backend` | `bb8f4a3` | 4 (test infra → entity → auth → test fix) |
+| Backend | `psswid/triageflow-backend` | `c46f04b` | 5 (test infra → entity → auth → test fix → key perms) |
 | Frontend | `psswid/triageflow-frontend` | `9c09721` | 2 (scaffold → pages) |
-| Docs | `psswid/triageflow-docs` | `0e50adb` | 1 (raw_log update) |
+| Docs | `psswid/triageflow-docs` | `a7735fd` | 2 (raw_log → handoff) |
 
 ### Backend (19 tests, 46 assertions)
 - `User` entity: UUID PK, email (unique), roles (json), password (hashed), createdAt. `register()` named constructor, `promoteToAdmin()`.
@@ -104,6 +104,7 @@ Issue chain: #1→#2→**#3**→{#4, #5}→#6→#7 on `psswid/triageflow-docs`
 - **UUID PK strategy** — use manual `Uuid::v4()` in constructor, not `doctrine.uuid_generator` (incompatible)
 - **No triage routes exist yet** — the auth test's `testProtectedEndpointRequiresAuth` uses GET /api/login returning 405; update to test real triage endpoint once TriageController exists
 - **Frontend stub pages need replacement** — TriagePage, TriageResultPage, MySubmissionsPage all render just a heading
+- **JWT private key permissions** — `private.pem` must be readable by `www-data` (PHP-FPM user in Docker). Fixed with `chmod 644` + Dockerfile RUN instruction at `c46f04b`. If login returns 500 "Signature key does not exist", check permissions inside container.
 
 ### Dependency Graph for Issue #3
 
