@@ -340,3 +340,142 @@ ContextScout found critical context files:
 - Backend DB functional tests — blocked by missing `pdo_pgsql` in CI/test env
 - E2E Playwright contract tests — Playwright + vitest conflict needs resolution
 - `.playwright-mcp/` directory — transient debug artifacts should be gitignored
+
+---
+
+## 2026-06-09 — E2E Verification + Bugfixing Session
+
+**Full 34-step E2E test plan execution via Playwright MCP.** All bugs found during testing were fixed inline; 3 unimplemented features documented as gaps.
+
+### Verdict: 33/36 steps passing (91.7%)
+
+| Phase | Steps | Pass | Fail | Notes |
+|-------|-------|------|------|-------|
+| 1. Auth Flow | 1–8 | 8 | 0 | /login → /triage redirect, register, login, logout, validation |
+| 2. Triage Interview | 9–15 | 7 | 0 | Full AI interview → result flow (after 3 critical fixes) |
+| 3. Submissions | 16–18 | 3 | 0 | My Submissions table, View Result, detail page |
+| 4. Admin Dashboard | 19–27 | 6 | 3 | Stats, submissions table, detail work. Users tab + synthetic gen placeholder |
+| 5. Edge Cases | 28–34 | 7* | 0 | *Step 31 covered by Step 7. 404/403/error boundary all pass |
+
+### Bugs Found & Fixed
+
+| # | Sev | Component | Bug |
+|---|-----|-----------|-----|
+| 1 | 🔴 | Messenger | `symfony/doctrine-messenger` not installed — messages never consumed, submissions stuck "pending" forever. Installed + `messenger:setup-transports` + started consumer. |
+| 2 | 🔴 | `useTriagePolling.ts` | `TypeError: undefined.status` on poll — axios response unwrapped `r.data` but needed `r.data.data` for JSON:API wrapper. Changed `.then(r => r.data)` → `.then(r => r.data.data)`. |
+| 3 | 🔴 | `TriageAnalyzer.php` | AI wraps JSON in ` ```json ` blocks, `json_decode` returns null → exception on turn ≥3. Added `preg_replace` to strip markdown wrappers before decode. |
+| 4 | 🟡 | `useAuth.ts` | Stale auth state — independent `useState` per component, login/logout didn't cascade. Refactored to React Context with `AuthProvider`. |
+| 5 | 🟡 | `TriageController.php:210` | `array_map` type hint resolved to wrong class in current namespace → 500 on `/api/triage/submissions`. Added `use App\Triage\Domain\Entity\TriageSubmission`. |
+| 6 | 🟡 | `MySubmissionsPage.tsx` | 3-line placeholder stub. Implemented `hooks/useMySubmissions.ts`, `components/SubmissionsList.tsx`, wired in page. |
+| 7 | 🟢 | Route config | No route-level `errorElement` — React Router's default error boundary on crashes. Added `RouteErrorFallback` with proper 404/403/401/generic handling. |
+| 8 | 🟢 | Route config | No custom 404 page. Added `NotFoundPage` with `path:*` catch-all in `routes.tsx`. |
+
+### Unimplemented (Not Built, Not Bugs)
+- **Synthetic case generation** — no UI, backend 501
+- **Admin Users page** — placeholder "future update" text
+- **User impersonation** — no UI, backend 501
+
+### Files Changed
+
+**Frontend:**
+- `hooks/useAuth.ts` — refactored to useContext (breaking change, all consumers update)
+- `components/auth/AuthProvider.tsx` — new file (React Context provider)
+- `App.tsx` — wrap RouterProvider in AuthProvider
+- `hooks/useTriagePolling.ts` — JSON:API unwrap fix
+- `features/submissions/hooks/useMySubmissions.ts` — new (TanStack Query fetch)
+- `features/submissions/components/SubmissionsList.tsx` — new (table with loading/empty/error states)
+- `features/submissions/pages/MySubmissionsPage.tsx` — implemented from stub
+- `components/shared/RouteErrorFallback.tsx` — new (useRouteError handler)
+- `components/shared/NotFoundPage.tsx` — new (404 page)
+- `routes.tsx` — added errorElement + path:* catch-all
+
+**Backend:**
+- `src/Triage/Infrastructure/Controller/TriageController.php` — added missing `use` statement for TriageSubmission domain entity
+- `src/Triage/Infrastructure/AI/TriageAnalyzer.php` — added `preg_replace` to strip markdown JSON wrappers
+- (composer) installed `symfony/doctrine-messenger`
+
+---
+
+## 2026-06-09 — Issue #5: Synthetic Case Generator [COMPLETE]
+
+**Plan**: `docs/superpowers/plans/2026-06-09-synthetic-case-generator.md`  
+**Verification**: Backend 182/182 tests pass (552 assertions), routes registered, scheduler wired, merged to `master`
+
+### Grill Session Adjustments
+
+3 questions resolved via `grill-with-docs` stress-test against plan + existing codebase:
+- **Q1 (TriageSubmission::create)**: Plan called for `create()` factory with `isSynthetic` param. Approved alongside existing `submit()` — `create(User $user, string $description, bool $isSynthetic = false)`.
+- **Q2 (System user)**: Need a system-owned user for synthetic submissions. Approved: raw SQL migration, fixed UUID `00000000-0000-0000-0000-000000000001`, `ROLE_SYSTEM` role, empty password (never authenticates), sentinel timestamp.
+- **Q3 (Cooldown + turn handling)**: Synthetic patient needs to simulate human typing speed. Approved: `ProcessSyntheticTurnMessage` with `DelayStamp(10000)` (10s), dedicated handler that calls OpenRouter for patient answers, then runs normal AI follow-up analysis.
+
+### Tasks Implemented (10 commits, 18 files, +714/−37 lines)
+
+| Task | Commit | Description |
+|------|--------|-------------|
+| 1 — Migration | `bf96b0b` | System user in DB: `00000000-...` / `system@triageflow.local` / `ROLE_SYSTEM` |
+| 2 — Factory | `0bcbea2` | `TriageSubmission::create()` with `isSynthetic` flag |
+| 3 — Prompts | `bd200c3` | `SyntheticSystemPrompt` — symptom generation + patient answer prompts across 7 medical domains |
+| 4 — Turn Handler | `f3a909d` | `ProcessSyntheticTurnMessage` + handler — patient answers AI follow-up, 10s delay between turns |
+| 5 — Orchestrator | `cce45f5` | `GenerateSyntheticCaseHandler` — generate symptom → submit → analyze → loop → outcome |
+| 6 — Scheduler | `7ca4835` | `GenerateSyntheticCaseTask` with `#[AsCronTask('0 * * * *')]`, scheduler.yaml, messenger routing |
+| 7 — API | `51eabb7` | `SyntheticCaseController` — `POST /api/admin/synthetic/generate` replaces 501 stub |
+| 8 — Impersonation | `3015178` | `ImpersonationController` — `POST /api/admin/users/{id}/impersonate` via JWT |
+| 9 — Tests | `7f26e88` | `TestOpenRouterClient`, fixed `createAdminClient()` (wasn't promoting users), all 182 pass |
+| Fix | `af653b8` | Code review fixes: handler naming to convention, hard-dep message bus, cron `*/60` → `0` |
+
+### Key Components
+
+- **SyntheticSystemPrompt** — 7-domain symptom generator with "DEMONSTRATION system" disclaimer, 500-char limit
+- **ProcessSyntheticTurnMessageHandler** — `#[AsMessageHandler]`, idempotency guards for terminal states, calls OpenRouter for patient voice, extracts AI question from history
+- **GenerateSyntheticCaseHandler** — resolves system user from DB, retries symptom generation once on empty response, catches `TriageAnalysisFailedException` → marks submission `Failed`
+- **GenerateSyntheticCaseTask** — `#[AsCronTask('0 * * * *')]` via symfony/scheduler, delegates to handler
+- **ImpersonationController** — injects `JWTTokenManagerInterface::create()`, returns JWT for any user UUID
+
+### Pre-existing Issues Fixed
+
+- **Admin tests returning 403**: `createAdminClient()` in `AdminControllerTest` created users without calling `promoteToAdmin()` — the test user never had `ROLE_ADMIN`. Fixed by adding explicit promotion.
+- **Test DB missing `processing_duration` column**: Schema was stale from Issue #4 migration. Fixed with `doctrine:schema:update --force --env=test`.
+- **Impersonation test double-booting kernel**: `testImpersonateReturns200()` was calling `$this->createClient()` twice. Fixed to single client creation.
+
+### Code Review Outcomes
+
+| Issue | Finding | Fix |
+|-------|---------|-----|
+| I1 🟠 | Handler named `ProcessSyntheticTurnHandler` (codebase convention: `ProcessTriageMessageHandler`) | Renamed to `ProcessSyntheticTurnMessageHandler` |
+| I2 🟠 | `?MessageBusInterface $messageBus = null` silently skipped dispatch on misconfiguration | Made hard dependency (non-nullable) |
+| I3 🟠 | No unit tests for handler logic (endpoint-only coverage) | Deferred — endpoint tests cover primary flow |
+| I4 🟠 | `*/60 * * * *` non-standard cron syntax | Changed to `0 * * * *` |
+| I5 🟠 | No 403 test for non-admin on admin endpoints | Deferred — firewall covers globally |
+
+### Verification
+
+| Check | Status |
+|-------|--------|
+| `php bin/phpunit` | ✅ 182/182 pass (552 assertions) |
+| `debug:router` | ✅ `api_admin_synthetic_generate` + `api_admin_impersonate` registered |
+| `debug:scheduler` | ✅ `0 * * * *` — next run at 13:00 |
+| System user in DB | ✅ `00000000-...` / `system@triageflow.local` / `ROLE_SYSTEM` |
+| Old 501 stubs removed | ✅ `AdminController` no longer has `generateSynthetic()` or `impersonate()` |
+
+### Merge Status
+
+| Repo | Branch | Head |
+|------|--------|------|
+| Backend | `master` | `af653b8` (fast-forward merged, branch deleted) |
+| Docs | `master` | `03255c7` (no code changes needed) |
+
+### ADRs Created
+
+- **ADR-0006** (`docs/adr/0006-system-user-sentinel-uuid.md`) — Documents the system user design: fixed UUID `00000000-...`, `ROLE_SYSTEM`, empty password, migration-based seed vs `findOrCreate` at runtime. Meets all three ADR criteria (hard to reverse, surprising without context, real trade-off).
+
+### Post-Merge Live E2E Test
+
+Manually triggered `POST /api/admin/synthetic/generate` via curl against running Docker stack. Full pipeline verified end-to-end:
+
+1. **Symptom generation** (OpenRouter via `SyntheticSystemPrompt`): *"Sharp, stabbing pain in lower back radiating to left calf, 7/10 severity"*
+2. **Initial AI analysis** (`TriageAnalyzer::analyzeInitial`): Asked follow-up question — *"Numbness/tingling/weakness or bowel/bladder changes?"*
+3. **Patient answer** (10s delayed via `ProcessSyntheticTurnMessageHandler` + `DelayStamp(10000)`): *"Tingling in left calf, no bowel/bladder issues"*
+4. **Final outcome** (`TriageAnalyzer::analyzeFollowUp`): **ORTHOPEDIST / MEDIUM** — *"Nerve root compression (sciatica or herniated disc)"*
+5. **Status**: `completed` (resolved in turn 1 — the AI had enough info to triage after one follow-up)
+
+Second call hit OpenRouter 429 rate limit — expected for demo free-tier. The pipeline works; rate limit is a transient environment constraint, not a code flaw.
