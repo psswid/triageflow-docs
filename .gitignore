@@ -21,3 +21,6 @@ Thumbs.db
 
 # OpenCode temp files
 .tmp/
+
+# Playwright MCP artifacts
+.playwright-mcp/

@@ -479,3 +479,46 @@ Manually triggered `POST /api/admin/synthetic/generate` via curl against running
 5. **Status**: `completed` (resolved in turn 1 — the AI had enough info to triage after one follow-up)
 
 Second call hit OpenRouter 429 rate limit — expected for demo free-tier. The pipeline works; rate limit is a transient environment constraint, not a code flaw.
+
+---
+
+## 2026-06-09 — Issue #6: Admin Tools — User Management + Impersonation [COMPLETE]
+
+**Design grill**: `grill-with-docs` stress-tested against existing infrastructure (ImpersonateResponse type, ENDPOINTS.ADMIN.IMPERSONATE, useAdminUsers hook, AuthProvider, AdminRoute guard, AppLayout).
+
+**Key design decisions:**
+- **sessionStorage + React Context** for impersonation state — survives page refresh without leaking admin's original JWT to disk (sessionStorage auto-clears on tab close)
+- **System user blocked on both frontend AND backend** — filtered from users table by email, 403 on controller for `ROLE_SYSTEM`
+- **isAdmin and isImpersonating are independent** — admin role retained, just viewing as another user
+- **Banner in AppLayout** (outside `<Outlet />`) — visible on all routes, persists across navigation
+
+### Changes
+
+**Backend** (1 file): `ImpersonationController.php`
+- Added `AccessDeniedHttpException` import
+- After null check: `if (in_array('ROLE_SYSTEM', $user->getRoles(), true))` → 403
+
+**Frontend** (6 files, 2 new):
+
+| File | Change |
+|------|--------|
+| `AuthProvider.tsx` | Added impersonation state — `impersonate(token, email)`, `exitImpersonation()`, sessionStorage for original JWT |
+| `ImpersonateButton.tsx` | NEW — TanStack `useMutation`, loading state, navigates to `/triage` on success |
+| `UsersTable.tsx` | NEW — queries users via `useAdminUsers`, filters system user, email/roles/created columns, impersonate per row |
+| `DashboardPage.tsx` | Users tab replaced placeholder `<p>` with `<UsersTable />` |
+| `ImpersonationBanner.tsx` | NEW — amber banner "Viewing as [email]" + "Back to admin" button |
+| `AppLayout.tsx` | Mounted `<ImpersonationBanner />` between Header and main |
+
+### Housekeeping (same session)
+- `.playwright-mcp/` added to root `.gitignore`
+- Hardcoded Chromium path removed from `.opencode/opencode.json`
+
+### Verification
+
+| Check | Status |
+|-------|--------|
+| `npx tsc --noEmit` | ✅ Clean |
+| `pnpm lint` | ✅ Clean (2 pre-existing e2e config errors) |
+| `pnpm test` | ✅ 58/60 pass (2 pre-existing poll timing failures) |
+| `pnpm build` | ✅ Clean (DashboardPage bundle 9.74kB) |
+| PHP lint | ✅ No syntax errors |
