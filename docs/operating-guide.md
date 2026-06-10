@@ -148,3 +148,25 @@ gh label create "ready-for-agent" --color "0e8a16" --repo psswid/triageflow-docs
 gh label create "ready-for-human" --color "fbca04" --repo psswid/triageflow-docs
 gh label create "wontfix" --color "ffffff" --repo psswid/triageflow-docs
 ```
+
+---
+
+## Mailpit (Email Testing)
+
+Mailpit runs as part of the Docker stack and captures all outbound emails from the Symfony backend.
+
+| Port | Usage |
+|------|-------|
+| `1025` | SMTP — Symfony Mailer sends here |
+| `8025` | Web UI — view captured emails in browser |
+
+**Workflow:**
+1. Register a new user at `http://localhost:5173/register`
+2. Open [Mailpit](http://localhost:8025) in your browser
+3. The verification email appears instantly
+4. Click the verification link to activate the account
+
+**Troubleshooting:**
+- If Mailpit isn't running: `docker compose up -d mailpit`
+- Check logs: `docker compose logs mailpit`
+- Verify web UI: `curl -s -o /dev/null -w "%{http_code}" http://localhost:8025` (should return 200)

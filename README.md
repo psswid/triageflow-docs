@@ -70,6 +70,26 @@ cd frontend && npx playwright test               # E2E (requires Docker backend)
 - Backend API: `http://localhost:8000`
 - Frontend SPA: `http://localhost:5173`
 
+## Email Verification (Local Development)
+
+This project uses **Mailpit** for local email testing. When you register a new user, a verification email is sent.
+
+### Creating a New User
+
+1. Start the backend: `cd backend && docker compose up -d`
+2. Navigate to `http://localhost:5173/register`
+3. Enter your email and password (minimum 8 characters)
+4. Confirm your password
+5. Submit the form
+6. Open [Mailpit](http://localhost:8025) to see the verification email
+7. Click the verification link to activate your account
+8. Login with your credentials
+
+### Accessing Emails
+
+- **Web UI:** [http://localhost:8025](http://localhost:8025)
+- **SMTP:** `localhost:1025` (configured in Symfony's `MAILER_DSN`)
+
 ## Key Documentation
 
 | Document | What It Covers |

@@ -143,6 +143,23 @@ cd "$BACKEND_DIR"
 docker compose up -d --build 2>&1
 success "Docker containers started"
 
+# Wait for Mailpit to be ready
+info "Verifying Mailpit email service..."
+MAILPIT_READY=false
+for i in $(seq 1 15); do
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:8025 2>/dev/null | grep -q "200"; then
+        MAILPIT_READY=true
+        break
+    fi
+    sleep 2
+done
+if [ "$MAILPIT_READY" = true ]; then
+    success "Mailpit running at http://localhost:8025"
+else
+    warn "Mailpit not accessible at http://localhost:8025"
+    warn "Check logs: cd $BACKEND_DIR && docker compose logs mailpit"
+fi
+
 # Wait for PostgreSQL to be healthy
 info "Waiting for PostgreSQL to be ready ..."
 MAX_RETRIES=30
@@ -157,6 +174,14 @@ until docker compose exec -T db pg_isready -U triageflow &>/dev/null; do
     sleep 2
 done
 success "PostgreSQL is ready"
+
+# Start messenger consumer for async triage processing
+info "Starting messenger consumer for async message processing..."
+if docker compose exec -T -d php php bin/console messenger:consume async -vv --time-limit=3600 2>&1; then
+    success "Messenger consumer started"
+else
+    warn "Could not start consumer (may already be running)"
+fi
 
 # Create .env from .env.example (not tracked in git, needed for Symfony kernel boot)
 if [ ! -f ".env" ]; then
@@ -183,6 +208,7 @@ cat > "$BACKEND_DIR/.env.local" << ENVEOF
 APP_ENV=dev
 APP_SECRET=${APP_SECRET}
 JWT_PASSPHRASE=${JWT_PASSPHRASE}
+DEFAULT_URI=http://localhost:5173
 ###< override ###
 
 ###> openrouter (set your real key here) ###

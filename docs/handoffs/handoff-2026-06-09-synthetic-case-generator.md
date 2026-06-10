@@ -65,7 +65,7 @@ Cron (0 * * * *) → GenerateSyntheticCaseTask
 - **Scheduler:** Next run at `Tue, 09 Jun 2026 14:00:00 +0000` (`0 * * * *`)
 - **Messenger routing:** `ProcessSyntheticTurnMessage → async` (3 retries, 2s/4s/8s delay)
 - **Failure transport:** `doctrine://default?queue_name=failed`
-- **OpenRouter models:** `google/gemma-4-31b-it:free` (default), `openai/gpt-oss-120b:free` (fallback)
+- **OpenRouter models:** `openrouter/free` (default, routes to best free model), `openai/gpt-oss-120b:free` (fallback on 429)
 - **API consistency:** 184 total submissions in DB, 1 synthetic (from E2E test)
 
 ## Suggested Skills for Next Agent

@@ -522,3 +522,66 @@ Second call hit OpenRouter 429 rate limit — expected for demo free-tier. The p
 | `pnpm test` | ✅ 58/60 pass (2 pre-existing poll timing failures) |
 | `pnpm build` | ✅ Clean (DashboardPage bundle 9.74kB) |
 | PHP lint | ✅ No syntax errors |
+
+---
+
+## 2026-06-10 — Auth Session + Email Verification + Bugfixes [COMPLETE]
+
+**Plan**: `docs/superpowers/plans/2026-06-10-auth-session-email-verification.md`  
+**Verification**: Backend 223/223 tests (753 assertions), Frontend 81/81 tests — all pushed
+
+### Issue 1: Auth Session Survives DB Reset
+
+Backend: Created `MeController.php` at `GET /api/me` — returns authenticated user data via `#[CurrentUser]`. Tested 3 cases (200 with JWT, 401 without token, 401 with invalid token).
+
+Frontend: `AuthProvider` now validates JWT on mount via `GET /api/me`. Added `isLoading` state — initial JWT exp check client-side, then async server validation. On failure: clears all storage (jwt_token, sessionStorage), sets unauthenticated. `ProtectedRoute` shows `<Loader/>` while validating, redirects to `/login` only after validation completes.
+
+### Issue 2: Registration Security
+
+**Password confirmation**: Backend `RegistrationController` validates `password_confirmation` via `Assert\Collection` + manual mismatch check (422/PASSWORD_MISMATCH). Frontend `RegisterPage` adds "Confirm Password" input with client-side match validation.
+
+**Email verification**: User entity gained `emailVerifiedAt`, `emailVerificationToken` (64-char hex, auto-generated in constructor), `verificationTokenExpiresAt` (+24h). Migration `Version20260610000001.php`. `VerifyEmailController` at `GET /api/verify-email` handles: missing token (400), invalid (404), expired (410), already verified (200), success (200). PUBLIC_ACCESS added to security.yaml.
+
+**Symfony Mailer**: Installed `symfony/mailer` v7.4.12 (3 deps). MAILER_DSN=smtp://mailpit:1025. Verification email sent on registration (from noreply@triageflow.local via `MailerInterface`, non-fatal try/catch on failure).
+
+**Login gate**: `EmailVerifiedUserChecker` implements `UserCheckerInterface` — blocks unverified users at login (skips ROLE_ADMIN). Registered on login firewall. Returns "Please verify your email address before logging in." as 401.
+
+**Mailpit**: Added to docker-compose.yml (axllent/mailpit:latest), SMTP:1025, Web:8025.
+
+**Frontend**: `VerifyEmailPage.tsx` at `/verify-email?token=xxx` calls backend internally, shows success/failure UI. Login page shows blue info box with Mailpit link after registration, amber warning for unverified login error.
+
+**DEFAULT_URI**: Changed from `http://localhost` to `http://localhost:5173` in .env, .env.example, setup.sh.
+
+### Model Fix
+
+Default model was `google/gemma-4-31b-it:free`, fallback `openai/gpt-oss-120b:free` was dead config (never referenced in `OpenRouterClient::chat()`). Fixed to switch to fallback on 429 with 2s delay + exponential backoff for network retries. 3 new tests. Later switched default to `openrouter/free` (OpenRouter's meta-router picks best free model) per user direction.
+
+### Processing Hang Fix
+
+No messenger consumer running — `ProcessTriageMessage` and `ProcessSyntheticTurnMessage` piled up in `messenger_messages` table. Fixed by starting consumer (`docker compose exec -d php ... messenger:consume async --time-limit=3600`). Backlog processed (submission `2ca3c6ae` → completed ORTHOPEDIST/MEDIUM). Added consumer start to `bin/setup.sh`.
+
+### Messenger Auto-Setup Fix
+
+`MESSENGER_TRANSPORT_DSN` had `auto_setup=0` — after DB reset, `messenger_messages` table was gone. Changed to `auto_setup=1` so table auto-creates. Added manual SQL setup for existing DB.
+
+### Submissions Clickable Fix
+
+`SubmissionsList.tsx` only showed "View Result" link for `status === 'completed'`. Changed to `status !== 'failed'` — non-completed submissions show "View Details" link. `TriageResultPage` already handles all statuses. Also removed empty `docs/testing/bugs.md`.
+
+### Code Review Fixes
+
+- `bin/setup.sh:174` — `success` message was unconditional after messenger consumer start (restructured as if/then/else)
+- `bin/setup.sh:148` — Mailpit used fixed `sleep 3` instead of retry loop (replaced with 15-retry loop like PostgreSQL check)
+- `README.md` — redundant URL text removed
+
+### Verification
+
+| Check | Status |
+|-------|--------|
+| Backend tests | ✅ 223/223 pass (753 assertions) |
+| Frontend tests | ✅ 81/81 pass |
+| Full pipeline (register → verify → login → triage submit) | ✅ End-to-end verified |
+| OpenRouter rate limiting | ⚠️ 429 on free tier (expected demo limitation) |
+
+### Deferred
+- OpenRouter rate limiting protection (retry-with-backoff on 429 for both models)
