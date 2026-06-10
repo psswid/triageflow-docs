@@ -158,10 +158,17 @@ until docker compose exec -T db pg_isready -U triageflow &>/dev/null; do
 done
 success "PostgreSQL is ready"
 
+# Create .env from .env.example (not tracked in git, needed for Symfony kernel boot)
+if [ ! -f ".env" ]; then
+    cp .env.example .env
+    success ".env created from .env.example"
+else
+    success ".env already exists"
+fi
+
 # Install PHP dependencies inside the container.
 # The anonymous volume /var/www/vendor preserves the image's vendor,
 # but a runtime install ensures freshness after dependency updates.
-# Use --no-scripts to skip cache:clear (which needs .env we don't have yet).
 info "Installing PHP dependencies ..."
 docker compose exec -T php sh -c "git config --global --add safe.directory /var/www && composer install --no-interaction --no-scripts" 2>&1
 success "PHP dependencies installed"
