@@ -34,16 +34,17 @@ error()   { echo -e "${RED}[ERROR]${NC} $1"; }
 # --- Paths ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCS_ROOT="$(dirname "$SCRIPT_DIR")"
-WORKSPACE_ROOT="$(dirname "$DOCS_ROOT")"
-BACKEND_DIR="$WORKSPACE_ROOT/triageflow-backend"
-FRONTEND_DIR="$WORKSPACE_ROOT/triageflow-frontend"
+BACKEND_DIR="$DOCS_ROOT/backend"
+FRONTEND_DIR="$DOCS_ROOT/frontend"
 
 echo ""
 echo "============================================"
 echo "  TriageFlow — Project Setup"
 echo "============================================"
 echo ""
-echo "Workspace: $WORKSPACE_ROOT"
+echo "Docs repo : $DOCS_ROOT"
+echo "Backend   : $BACKEND_DIR"
+echo "Frontend  : $FRONTEND_DIR"
 echo ""
 
 # --------------------------------------------------
@@ -113,7 +114,7 @@ clone_or_pull() {
         git fetch origin "$branch"
         git checkout "$branch"
         git pull origin "$branch"
-        cd "$WORKSPACE_ROOT"
+        cd "$DOCS_ROOT"
         success "$name updated"
     else
         info "Cloning $name ..."
