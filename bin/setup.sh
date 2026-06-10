@@ -161,6 +161,13 @@ until docker compose exec -T db pg_isready -U triageflow &>/dev/null; do
 done
 success "PostgreSQL is ready"
 
+# Install PHP dependencies inside the container.
+# The volume mount hides the image's pre-built vendor/,
+# so we need a runtime composer install.
+info "Installing PHP dependencies ..."
+docker compose exec -T php composer install --no-interaction 2>&1
+success "PHP dependencies installed"
+
 # Generate random secrets
 APP_SECRET=$(openssl rand -hex 32 2>/dev/null || date +%s%N | sha256sum | cut -d' ' -f1)
 JWT_PASSPHRASE=$(openssl rand -hex 32 2>/dev/null || date +%s%N | sha256sum | cut -d' ' -f1)
