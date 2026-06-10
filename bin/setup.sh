@@ -161,8 +161,9 @@ success "PostgreSQL is ready"
 # Install PHP dependencies inside the container.
 # The anonymous volume /var/www/vendor preserves the image's vendor,
 # but a runtime install ensures freshness after dependency updates.
+# Use --no-scripts to skip cache:clear (which needs .env we don't have yet).
 info "Installing PHP dependencies ..."
-docker compose exec -T php composer install --no-interaction 2>&1
+docker compose exec -T php sh -c "git config --global --add safe.directory /var/www && composer install --no-interaction --no-scripts" 2>&1
 success "PHP dependencies installed"
 
 # Generate random secrets
