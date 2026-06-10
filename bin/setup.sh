@@ -138,10 +138,6 @@ info "Starting backend services..."
 
 cd "$BACKEND_DIR"
 
-# Create empty JWT key files so the Docker build's chmod doesn't fail
-mkdir -p config/jwt
-touch config/jwt/private.pem config/jwt/public.pem
-
 # Build and start containers
 docker compose up -d --build 2>&1
 success "Docker containers started"
@@ -162,8 +158,8 @@ done
 success "PostgreSQL is ready"
 
 # Install PHP dependencies inside the container.
-# The volume mount hides the image's pre-built vendor/,
-# so we need a runtime composer install.
+# The anonymous volume /var/www/vendor preserves the image's vendor,
+# but a runtime install ensures freshness after dependency updates.
 info "Installing PHP dependencies ..."
 docker compose exec -T php composer install --no-interaction 2>&1
 success "PHP dependencies installed"
