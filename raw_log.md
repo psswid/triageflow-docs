@@ -585,3 +585,19 @@ No messenger consumer running — `ProcessTriageMessage` and `ProcessSyntheticTu
 
 ### Deferred
 - OpenRouter rate limiting protection (retry-with-backoff on 429 for both models)
+
+---
+
+## 2026-06-11 — Story 9: Generate Button + Async Queue [COMPLETE]
+
+**Frontend**: Added "Generate Synthetic Case" button on admin dashboard (`DashboardPage.tsx`) with green success banner. New `useGenerateSyntheticCase.ts` mutation hook (TanStack Query), invalidates admin stats + submissions on success.
+
+**Backend queue refactor**: `GenerateSyntheticCaseHandler` now dispatches `ProcessSyntheticCaseMessage` for async AI analysis instead of running it inline (was blocking ~4-10s). New `ProcessSyntheticCaseMessageHandler` — loads submission, calls `TriageAnalyzer::analyzeInitial()`, handles result/question/failure. Routed via `messenger.yaml` to async transport.
+
+**Worker container**: Added `worker` service to `docker-compose.yml` running `messenger:consume async --limit=10`.
+
+**Bugfix — AI symptom overflow**: AI occasionally ignored the 500-char prompt instruction (generated 1776 chars). Added defense-in-depth truncation (497 chars + `...`) in `generateSymptom()`.
+
+**Bugfix — Import typo**: `useAdminSubscriptions` → `useAdminSubmissions` in `DashboardPage.tsx`.
+
+**Verification**: 228 tests, 775 assertions. Docker compose up — worker consuming from async transport. E2E: generate endpoint returns 201, worker processes message (OpenRouter 200 in ~1s). Frontend build passes (171 modules).
