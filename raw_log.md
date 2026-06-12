@@ -601,3 +601,68 @@ No messenger consumer running — `ProcessTriageMessage` and `ProcessSyntheticTu
 **Bugfix — Import typo**: `useAdminSubscriptions` → `useAdminSubmissions` in `DashboardPage.tsx`.
 
 **Verification**: 228 tests, 775 assertions. Docker compose up — worker consuming from async transport. E2E: generate endpoint returns 201, worker processes message (OpenRouter 200 in ~1s). Frontend build passes (171 modules).
+
+---
+
+## 2026-06-12 — Issue #7: Testing & Polish [COMPLETE]
+
+**Session**: OpenAgent — full diagnostic + fix cycle
+
+### Initial State
+- **Backend**: 228 tests, **54 errors** — all caused by `symfony/mailer` not installed (framework.yaml had mailer config, package in composer.json but never in vendor/)
+- **Frontend**: 81 tests, **5 failed** — DashboardPage tests rendered `useGenerateSyntheticCase()` (calls `useQueryClient()`) without `QueryClientProvider`
+- **PHPStan**: Not installed (missing from composer.json dev-deps)
+- **ChatMessage/ConversationBubble**: Zero dedicated tests
+- Issue #7 marked `ready-for-agent`, all AC not met
+
+### Fix 1 — symfony/mailer
+- `composer install` resolved it (was already in composer.lock, just missing from vendor/)
+- Result: **228 tests, 0 errors** (resolved all 54)
+
+### Fix 2 — DashboardPage tests
+- Added `TestWrapper` with `MemoryRouter` + `QueryClientProvider`, used via `render(<Component />, { wrapper: TestWrapper })`
+- Result: **81 tests, 0 failures** (resolved all 5)
+
+### Fix 3 — PHPStan level 5
+- Installed `phpstan/phpstan`, `phpstan/phpstan-symfony`, `phpstan/phpstan-doctrine`, `phpstan/phpstan-phpunit`
+- Created `phpstan.neon.dist` with `treatPhpDocTypesAsCertain: false`
+- Fixed 40 errors (3 redundant null checks in `TriageAnalyzer.php`, 37 in tests)
+- Result: **0 errors at level 5**
+
+### Fix 4 — ConversationBubble component test
+- 6 tests: user alignment (right), assistant alignment (left), result badge, content rendering, timestamp presence, initial_description alignment
+- Result: **87 frontend tests pass (12 files)**
+
+### Pushed
+| Repo | Head | Message |
+|------|------|---------|
+| Backend | `4166fe2` | fix(testing): install symfony/mailer, add PHPStan level 5, fix test quality issues |
+| Frontend | `25cbdb9` | test(triage): add ConversationBubble component tests — and `affdcaf` for DashboardPage wrapper |
+
+### Issue #7 Closed
+All 10 acceptance criteria met, issue closed via `gh issue close 7`.
+
+---
+
+## 2026-06-12 — CI Pipeline: Backend CI Fixed (5 iterations) [COMPLETE]
+
+**Two workflow files created** — `backend/.github/workflows/ci.yml` (3 jobs) + `frontend/.github/workflows/ci.yml` (2 jobs).
+
+**Frontend CI passed immediately** ✅ — Vitest 87 tests + TypeScript typecheck.
+
+**Backend CI required 5 fixes across 4 commits:**
+
+| # | Fix | Issue |
+|---|-----|-------|
+| 1 | `cp .env.test .env` before `composer install` | `.env` missing in CI checkout (gitignored) |
+| 2 | `--no-scripts` flag + `.env` creation after install | `cache:clear` auto-script fails without `.env` |
+| 3 | `DEFAULT_URI` env var added | Needed by `routing.yaml` + `services.yaml` at boot |
+| 4 | `CORS_ALLOW_ORIGIN`, `MESSENGER_TRANSPORT_DSN`, `MAILER_DSN`, `JWT_*` | All needed at runtime, not in `.env.test` |
+| 5 | `JWT_PASSPHRASE=` (empty) | OpenSSL 3.x on ubuntu-latest rejects non-empty passphrase on unencrypted PKCS#8 key (`DECODER routines::unsupported`) |
+| 6 | `openssl genpkey` in CI | JWT keys not tracked in git — don't exist in checkout |
+| 7 | `Length(min: 8)` named args | Symfony 7.3 deprecation triggers `failOnDeprecation="true"` |
+| 8 | `coverage: pcov` (was `none`) | "No coverage driver" warning triggers `failOnWarning="true"` |
+
+**Final state**: ✅ All 3 jobs green — 228 tests / 771 assertions in 62s, PHPStan level 5 clean in 16s, Docker build in 42s.
+
+**ADR-0007 created** — documents the decision to generate JWT keys at runtime in CI rather than committing them.
