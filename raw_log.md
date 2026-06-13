@@ -817,3 +817,64 @@ Key fixes from code review:
 | TypeScript | ✅ Zero errors |
 | Parent repo | ✅ Clean on `master`, branch merged & deleted |
 | ADR needed? | ❌ No — follows existing conventions, all decisions documented in grill |
+
+---
+
+## 2026-06-13 — Issue #11: UX Polish — Loading States, Error Recovery, Toast System [COMPLETE]
+
+**Session**: OpenAgent — grill-with-docs → writing-plans → subagent-driven-development (13 tasks) → code review → fix → full pipeline validation  
+**Verification**: Frontend 119/119 tests (17 files), TSC+ESLint clean. Backend 242/242 tests (804 assertions), PHPStan level 5 clean.
+
+### Grill Session Adjustments
+
+5 decisions resolved via `grill-with-docs`:
+| # | Question | Decision |
+|---|----------|----------|
+| Q1 | ErrorFallback vs existing ErrorBoundary | **Option B** — new `ErrorFallback.tsx` as separate presentational component (existing ErrorBoundary left for React render errors) |
+| Q2 | TriagePage submitting state skeleton | **Skip** — keep form visible + button spinner (better UX than replacing with blank skeleton) |
+| Q3 | SubmissionsList vs MySubmissionsPage modification | **Modify `SubmissionsList`** (loading/error handled there, page is thin wrapper) |
+| Q4 | Auth pages Phase 1 scope | **Phase 2 only** (accessibility audit — no skeletons needed for forms) |
+| Q5 | Toast wiring pattern for mutations | **Option B** — add `onError` callback params to mutation hooks |
+
+### New Components (4)
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `Skeleton` | `frontend/src/components/ui/Skeleton.tsx` | Variant-based (`text/card/table-row/stats-grid`), Tailwind `animate-pulse`, `aria-hidden="true"` |
+| `ErrorFallback` | `frontend/src/components/shared/ErrorFallback.tsx` | API error display with `onRetry`, collapsible stack trace, `role="alert"` |
+| `Toast` | `frontend/src/components/ui/Toast.tsx` | Auto-dismiss (5s), error/warning/info variants, dismiss button, `role="alert"` |
+| `ToastProvider` | `frontend/src/components/ui/ToastProvider.tsx` | React context + `useToast()` hook for stacking toasts, `aria-live="polite"` container |
+
+### Components Modified (10)
+
+| Component | Loading → | Error → |
+|-----------|-----------|---------|
+| `TriageResultPage` | Skeleton cards + refetch | ErrorFallback + "New Triage" nav |
+| `StatsGrid` | Skeleton stats-grid + refetch | ErrorFallback |
+| `SubmissionsTable` | Skeleton table-row | ErrorFallback (no button — optional onRetry) |
+| `FailedMessagesTable` | Skeleton table-row + toast on mutation error | ErrorFallback |
+| `UsersTable` | Skeleton table-row | ErrorFallback |
+| `SubmissionsList` | Skeleton table-row | ErrorFallback |
+| `SubmissionDetailPage` | Skeleton cards + refetch + back link | ErrorFallback |
+| `DashboardPage` | — | ErrorFallback for submissions query error + toast on synthetic gen error |
+| `main.tsx` | — | Wrapped in `<ToastProvider>` |
+| 3 mutation hooks | — | Added `onError` callback params |
+
+### Code Review Outcomes
+
+2 Important issues found and fixed:
+| # | Issue | Fix |
+|---|-------|-----|
+| I1 | TriageResultPage generic error lost navigation (old code had "New Triage" button) | Added "New Triage" button below ErrorFallback |
+| I2 | Dead Retry buttons in 4 table components (`onRetry={() => undefined}`) | Made `onRetry` optional in ErrorFallback — Retry button hidden when not provided |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| Frontend tests | ✅ 119/119 pass (17 files, +24 new tests) |
+| Frontend TypeScript | ✅ Clean |
+| Frontend ESLint | ✅ Clean |
+| Backend PHPUnit | ✅ 242/242 pass (804 assertions) |
+| Backend PHPStan | ✅ Clean (level 5) |
+| ADR needed? | ❌ No — standard patterns, easy to reverse, no surprising decisions |
