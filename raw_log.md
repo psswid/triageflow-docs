@@ -644,6 +644,80 @@ All 10 acceptance criteria met, issue closed via `gh issue close 7`.
 
 ---
 
+## 2026-06-13 — Issue #10: Structured Logging + Observability [COMPLETE]
+
+**Session**: OpenAgent — grill → implement → code review → fix → push  
+**Verification**: Frontend 95/95 tests, TSC+ESLint clean. Backend 180/180 unit tests, PHPStan level 5 clean. Infrastructure-dependent 45 tests skipped (no PostgreSQL).
+
+### Grill Session (`grill-with-docs`, compressed)
+
+Resolved all design decisions for structured logging:
+- **Correlation IDs**: UUID v4 via `Uuid::v4()->toRfc4122()`, static processor (not request-scoped)
+- **Subscriber**: HTTP `kernel.request`/`kernel.response` — handlers set own UUID in worker context
+- **OpenRouterClient**: `?LoggerInterface $logger = null` (optional, NullLogger in tests)
+- **Log field naming**: snake_case for JSON output
+- **Monolog processor**: default (all handlers/channels, no restriction)
+- **Handler status**: named string per return path (`noop_*`, `analysis_failed`, `success`, `error`)
+
+### Backend Implementation
+
+**New files** (3):
+- `src/Shared/Infrastructure/Logging/CorrelationIdProcessor.php` — Monolog processor, `__invoke(LogRecord): LogRecord`, sets `$record->extra['correlation_id']`
+- `src/Shared/Infrastructure/Logging/CorrelationIdSubscriber.php` — `#[AsEventListener]` for kernel.request (priority 100, UUID gen) + kernel.response (X-Correlation-Id header)
+- `tests/Shared/Infrastructure/Logging/CorrelationIdSubscriberTest.php` — 6 tests (UUID format, sub-request skip, header presence/absence/skip)
+
+**Modified files** (8):
+- `config/services.yaml` — `monolog.processor` tag registration
+- `OpenRouterClient.php` — Optional logger with timing, primary-429 warning, retry-notice, rate-limit-all error, token_usage extraction
+- `ProcessTriageMessageHandler.php` — LoggerInterface + timing + status tracking
+- `ProcessSyntheticCaseMessageHandler.php` — Same, plus terminal state guard
+- `ProcessSyntheticTurnMessageHandler.php` — Same, with `failed_empty_answer` naming
+- `OpenRouterClientTest.php` — Added `logger: null` to named constructor args
+- 2 handler tests — LoggerInterface mock injection
+
+**Bug found & fixed**: `CorrelationIdProcessor` typed `array $record` but Monolog 3 passes `LogRecord` objects. Changed to `LogRecord` with `$record->extra['correlation_id']` mutation.
+
+**PHP 8.5 quirk**: Named arguments can't skip optional params before required ones. Moved `$logger` after all required params in `OpenRouterClient` constructor. Also fixed PHPStan `parameter.requiredAfterOptional`.
+
+### Frontend Lint Fixes (same session)
+
+Cleaned 12 ESLint errors across 7 files:
+- `AuthProvider.tsx` — Removed redundant JWT expiry checks from `useEffect` (already in `useState` initializer)
+- `VerifyEmailPage.tsx` — Moved `!token` early return to `useState` initializer
+- `useAdminFailedMessages.ts` / `useGenerateSyntheticCase.ts` — Added `void` to floating `invalidateQueries` promises + typed API response
+- `FailedMessagesTable.tsx` — Removed unused import
+- `ImpersonateButton.test.tsx` — `eslint-disable` for intentional empty executor
+- `eslint.config.js` — Ignored playwright config + e2e specs
+
+### Code Review Outcomes
+
+5 Important + 1 Minor fixed:
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | Missing terminal guard in ProcessSyntheticCaseMessageHandler | Added `noop_already_terminal` guard |
+| 2 | Missing warning on primary model 429 | Added `$this->logger?->warning(...)` |
+| 3 | Missing notice on transport retry success | Conditional notice vs info based on `$attempts > 0` |
+| 4 | `empty_answer` naming inconsistent | Renamed → `failed_empty_answer` |
+| 5 | `rate_limited_all_models` used warning (spec said error) | Changed to `error` |
+| 6 | `$status = 'noop'` unreachable | Changed to defensive `'noop_already_terminal'` |
+
+### Commits
+
+| Repo | Commit | Message |
+|------|--------|---------|
+| Backend | `fea218d` | feat: add structured logging with correlation IDs |
+| Frontend | `3b0a0aa` | fix: resolve ESLint errors across auth, admin hooks, and tests |
+
+### Push Status
+
+| Repo | Remote | Head |
+|------|--------|------|
+| Backend | `psswid/triageflow-backend` | `fea218d` |
+| Frontend | `psswid/triageflow-frontend` | `3b0a0aa` |
+| Docs | `psswid/triageflow-docs` | up-to-date |
+
+---
+
 ## 2026-06-12 — CI Pipeline: Backend CI Fixed (5 iterations) [COMPLETE]
 
 **Two workflow files created** — `backend/.github/workflows/ci.yml` (3 jobs) + `frontend/.github/workflows/ci.yml` (2 jobs).
@@ -666,3 +740,80 @@ All 10 acceptance criteria met, issue closed via `gh issue close 7`.
 **Final state**: ✅ All 3 jobs green — 228 tests / 771 assertions in 62s, PHPStan level 5 clean in 16s, Docker build in 42s.
 
 **ADR-0007 created** — documents the decision to generate JWT keys at runtime in CI rather than committing them.
+
+---
+
+## 2026-06-12 — Issue #9: Worker Monitoring + Failed Messages [COMPLETE]
+
+**Plan**: `docs/superpowers/plans/2026-06-12-failed-messages.md`  
+**Verification**: Backend 236/236 tests (797 assertions), Frontend 95/95 tests (13 files), TypeScript zero errors — all merged to `master`
+
+### Design Decisions (via `grill-with-docs`)
+
+| # | Question | Decision |
+|---|----------|----------|
+| Q1 | Failed Messages vs Dead Letter Queue | **Failed Messages** (aligns with Symfony's `failed` transport) |
+| Q2 | HealthController location | Standalone at `App\Controller` (cross-cutting) |
+| Q3 | Retry/Delete approach vs service layer | **Raw SQL** via DBAL\Connection (matches GET approach) |
+| Q4 | FailedMessagesTable pattern | **Self-fetching** (like UsersTable) |
+| Q5 | Endpoint location | `AdminController` (not separate controller) |
+| Q6 | Tab placement | New "Failed Messages" tab (not panel within Overview) |
+| Q7a | Data model | `FailedMessageResource` with `preview` (extracted from body) |
+| Q7b | Retry/Delete UX | **Inline buttons** (blue Retry + red Delete, confirm dialog) |
+| Q7c | Polling interval | **15s** |
+
+### Backend Changes
+
+**AdminController.php** (+100 lines, 3 endpoints):
+- `GET /api/admin/failed-messages` — queries `messenger_messages WHERE queue_name = 'failed'`, returns JSON:API-style with type/error/preview/timestamp
+- `POST /api/admin/failed-messages/{id}/retry` — **atomic UPDATE** `SET queue_name = 'default', delivered_at = NULL WHERE id = :id AND queue_name = 'failed'`, checks affected row count for 404
+- `DELETE /api/admin/failed-messages/{id}` — **atomic DELETE** `WHERE id = :id AND queue_name = 'failed'`, checks affected row count for 404
+
+Key fixes from code review:
+- TOCTOU bug eliminated (SELECT-then-UPDATE replaced with single atomic UPDATE)
+- `queue_name = 'failed'` guard added to DELETE (was soft on missing guard)
+- `json_decode` null guard for malformed message bodies
+- `serializeFailedMessage()` extracts `X-Message-Class`, `X-Failed-Description` from headers, `description` field from JSON body (first 120 chars)
+
+**Tests**: 8 new test methods (200/404/401 for each endpoint + GET list), `seedFailedMessage()` helper inserts realistic failed message. 236 total, 797 assertions.
+
+**Commits** (on `backend/` master):
+| Commit | Message |
+|--------|---------|
+| `475c809` | feat(admin): add GET /api/admin/failed-messages endpoint |
+| `54ac72d` | fix(admin): guard against null json_decode in serializeFailedMessage |
+| `15e519e` | feat(admin): add retry and delete endpoints for failed messages |
+| `cea55d0` | fix(admin): make retry/delete atomic with AND queue_name='failed' guard |
+
+### Frontend Changes
+
+**Types** (`types.ts`): `FailedMessageResource`, `FailedMessagesListResponse`, `RetryFailedMessageResponse`, `DeleteFailedMessageResponse`
+
+**Endpoints** (`endpoints.ts`): `ADMIN.FAILED_MESSAGES`, `ADMIN.FAILED_MESSAGE_RETRY(id)`, `ADMIN.FAILED_MESSAGE_DELETE(id)`
+
+**Hook** (`useAdminFailedMessages.ts`): `useAdminFailedMessages()` query (15s polling), `useRetryFailedMessage()` mutation, `useDeleteFailedMessage()` mutation. Matches `useAdminUsers.ts` + `useGenerateSyntheticCase.ts` patterns.
+
+**Component** (`FailedMessagesTable.tsx`): Self-fetching, 4 states (loading Spinner, error EmptyState, empty "No failed messages" / "All messages are processing normally.", data table with inline Retry/Delete). Columns: ID, Type (last namespace part), Failed At, Error (red text), Preview, Actions. Confirm dialog on delete.
+
+**Dashboard** (`DashboardPage.tsx`): 4th tab "Failed Messages" added to tabbed layout.
+
+**Tests**: `FailedMessagesTable.test.tsx` — 7 tests (loading, error, empty, data rows, retry click, delete confirm, delete cancel). `DashboardPage.test.tsx` — updated for 4 tabs.
+
+**Commits** (on `frontend/` master):
+| Commit | Message |
+|--------|---------|
+| `8da16a9` | feat(admin): add FailedMessageResource type and endpoints |
+| `245bbc0` | feat(admin): add useAdminFailedMessages hook with retry/delete mutations |
+| `72fb7e2` | feat(admin): add FailedMessagesTable component |
+| `af4fcb0` | test(admin): add FailedMessagesTable component tests |
+| `f49dd6a` | feat(admin): add Failed Messages tab to dashboard |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| Backend tests | ✅ 236/236 pass (797 assertions) |
+| Frontend tests | ✅ 13 files, 95/95 pass |
+| TypeScript | ✅ Zero errors |
+| Parent repo | ✅ Clean on `master`, branch merged & deleted |
+| ADR needed? | ❌ No — follows existing conventions, all decisions documented in grill |
