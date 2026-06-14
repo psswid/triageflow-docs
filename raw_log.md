@@ -878,3 +878,83 @@ Key fixes from code review:
 | Backend PHPUnit | ✅ 242/242 pass (804 assertions) |
 | Backend PHPStan | ✅ Clean (level 5) |
 | ADR needed? | ❌ No — standard patterns, easy to reverse, no surprising decisions |
+
+---
+
+## 2026-06-14 — Business Website Layer [COMPLETE]
+
+**Scope expansion to Issue #11.** Built the full public-facing business website on top of the authenticated triage SPA. 17 implementation plan tasks across 8 parallel batches + 11 code review fixes.
+
+### Plan
+
+`docs/superpowers/plans/2026-06-13-business-website-layer.md` — 17 tasks, ~65 files frontend, 1 file backend.
+
+### Design Review (OpenFrontendSpecialist + ui-ux-pro-max)
+
+15 UI polish changes integrated: emojis → Lucide icons (BrainCircuit/Layers/RefreshCw/BarChart4), mobile hamburger menu, glassmorphism hero (`backdrop-blur-xl` on frosted card), amber disclaimer (not red), Poppins+Inter typography, timeline connecting line, sticky ToC, 2×2 contact grid, expanded design tokens (accent teal, surface slate, font/radius tokens), dark mode hero gradient fix.
+
+### Frontend: Public Website (7 pages)
+
+| Page | Route | Design |
+|------|-------|--------|
+| Landing | `/` | Glassmorphism hero, 4 feature cards, demo preview, tech stack grid |
+| About | `/about` | Developer identity (initials circle), Tech Decisions grid, amber AlertTriangle disclaimer |
+| How It Works | `/how-it-works` | Vertical gradient timeline, 4 StepCards with ring-4 number circles, accent CTA |
+| Privacy | `/privacy` | Sticky ToC sidebar (IntersectionObserver), 6 card-wrapped sections |
+| Terms | `/terms` | Section-specific Lucide icons (FlaskConical/Stethoscope/ShieldOff/Database), ToC |
+| Cookies | `/cookies` | Storage/tracking icons (HardDrive/Layers/EyeOff), ToC |
+| Contact | `/contact` | Centered frosted card, 2×2 social grid (Portfolio teal + GitHub/LinkedIn/Email bordered) |
+
+### Frontend: Cross-Cutting
+
+- **i18n**: `react-i18next` + `i18next-browser-languagedetector`, 16 JSON locale files (8 EN + 8 PL), all 26 components migrated
+- **Dark mode**: `useDarkMode` hook (system pref + localStorage + media query listener), sun/moon toggle in header & footer, ThemeInit in `main.tsx` before `createRoot()` (no FOUC) — fixed in code review (was render-phase side-effect in App.tsx)
+- **Cookie consent**: Lazy-initializer `useState(() => !localStorage.getItem('cookieConsent'))` — no flash, no useEffect
+- **Language switcher**: Segmented EN|PL pill control (MarketingHeader + Footer + AppLayout header)
+- **MarketingLayout**: Sticky header (NavLink active indicators, mobile slide-in drawer with Menu/X) + 3-column footer
+- **Design tokens**: Primary 50-950, accent teal 50-950, surface slate 50-950, urgency, `--font-sans/heading/mono`, `--radius-sm/md/lg/xl/2xl`, Poppins 600/700 via Google Fonts
+- **Route structure**: MarketingLayout (public pages) + standalone unauth group (login/register/verify-email, no layout) + `<ProtectedRoute><AppLayout /></ProtectedRoute>` (authenticated/admin)
+
+### Backend
+
+- `RegistrationController.php`: PL email body + signature when `Accept-Language: pl`, EN fallback
+
+### Code Review (11 issues fixed post-impl)
+
+| # | Severity | Issue | Fix |
+|---|----------|-------|-----|
+| C1 | Critical | ThemeInit ran `localStorage.getItem` during render | Moved to `main.tsx` before `createRoot()` |
+| C2 | Critical | `dangerouslySetInnerHTML` on plain text keys | Regular text nodes for intro/who/why, only disclaimer.body keeps HTML |
+| I1 | Important | Login/register showed auth header (navigate leaked) | Standalone unauth route group, no AppLayout |
+| I2 | Important | ToC "On this page" hardcoded English | `useTranslation('legal')` with `toc.label` — PL: "Na tej stronie" |
+| I4 | Important | Missing features section heading | Added `<h2>{t('features.title')}</h2>` before feature cards |
+| I5 | Important | LinkedIn URL was `/in/piotr-swiderski` (plan said `/in/psswid`) | Fixed to `/in/psswid` |
+| I6 | Important | Email body missing signature | Added `\n\n— TriageFlow` to both EN and PL |
+| I7 | Important | Mobile menu `aria-label` hardcoded | i18n with `header.openMenu`/`header.closeMenu` — PL: "Otwórz menu"/"Zamknij menu" |
+| I8 | Important | `hero.disclaimer` locale key existed but never rendered | Added `<p>` in hero section between subtitle and CTAs |
+| I9 | Important | `cookies.banner` locale key rendered twice (h2 + p) | Removed duplicate h2, single `<p>` |
+| I10 | Important | Minimal test coverage for new features | +3 test files, +10 tests (CookieBanner, LanguageSwitcher, HowItWorksPage) |
+
+### Verification (fresh)
+
+| Check | Result |
+|-------|--------|
+| `npx tsc --noEmit` | ✅ 0 errors |
+| `npx eslint src/` | ✅ 0 errors, 0 warnings |
+| `npx vitest run` | ✅ 146/146 pass (24 files, up from 95) |
+| `npx vite build` | ✅ Exit 0 (1969 modules) |
+| PHP syntax | ✅ No errors |
+
+### Files
+
+~70 frontend files, 1 backend file. 6 frontend commits, 2 backend commits, 1 docs commit.
+
+### ADR Created
+
+- **ADR-0008** (`docs/adr/0008-dual-purpose-frontend-architecture.md`) — Documents the decision to serve both authenticated SPA and public website from a single React app with two layout wrappers, rather than splitting into separate frontends.
+
+### Next
+
+- Accessibility audit (Issue #11 original Phase 2 HITL)
+- E2E Playwright verification of new public pages
+- Commit and push all 3 repos
