@@ -1,6 +1,8 @@
 # TriageFlow
 
-AI-assisted patient pre-screening demonstration system. A 2-week portfolio project that simulates a medical triage pipeline using synthetic data and LLM-powered analysis. Primary goal is demonstrating full-stack development proficiency with Symfony + React + AI — not medical accuracy.
+AI-assisted patient pre-screening demonstration system. A two-week portfolio project simulating a medical triage pipeline with synthetic data and LLM-powered analysis. Primary goal is demonstrating full-stack development proficiency with Symfony + React + AI — not medical accuracy.
+
+The frontend serves dual duty: an authenticated SPA (the triage tool itself) and a public-facing business website with marketing pages. The public site provides landing, about, and legal pages; the authenticated app is the functional core. Both share a unified design system (medical triage color palette), i18n (EN + PL), and dark mode.
 
 ## Language
 
