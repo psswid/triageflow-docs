@@ -1072,3 +1072,50 @@ Key fixes from code review:
 - **ADR-0008** (`docs/adr/0008-dual-purpose-frontend-architecture.md`) — Documents the decision to serve both authenticated SPA and public website from a single React app with two layout wrappers, rather than splitting into separate frontends.
 
 ---
+
+## 2026-06-17 — Issue #10: Code Coverage — pcov + 80% Threshold + CI Job [COMPLETE]
+
+**Plan**: `docs/superpowers/plans/2026-06-17-code-coverage-pcov-80-threshold.md`  
+**Verification**: Backend 252/252 tests (893 assertions), PHPStan level 5 clean — frontend 146/146 Vitest, ESLint clean, 7 pre-existing TS errors (unrelated).
+
+### Design Decision: CI-Level Threshold Enforcement
+
+PHPUnit 11.5.55 XSD does not support `threshold=""` on the `<phpunit>` element (common misconception). Crap4J threshold measures CRAP score, not statement coverage. Decision: enforce 80% via CI-level `clover.xml` parsing with PHP `simplexml_load_file()` + `exit(1)` check. Documented in ADR-0009.
+
+### Backend Changes (3 files)
+
+| File | Change |
+|------|--------|
+| `phpunit.dist.xml` | Added `<clover outputFile="var/coverage/clover.xml"/>` + `<text outputFile="php://stdout" showOnlySummary="true"/>` to coverage report |
+| `Dockerfile` | Added `$PHPIZE_DEPS`, `pecl install pcov`, `docker-php-ext-enable pcov` |
+| `.github/workflows/ci.yml` | Changed test step to `--coverage-clover`, added threshold check step, added `actions/upload-artifact@v4` for coverage artifact |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `php bin/phpunit` | ✅ 252/252 pass (893 assertions) |
+| `npx vitest run` | ✅ 146/146 pass (24 files) |
+| `npx eslint src/` | ✅ 0 errors |
+| `npx tsc --noEmit` | ⚠️ 7 pre-existing TS errors (unrelated) |
+| `phpstan analyse` | ✅ Level 5, 0 errors |
+
+### ADR Created
+
+- **ADR-0009** (`docs/adr/0009-code-coverage-ci-threshold.md`) — Documents why coverage threshold is enforced at CI level (via clover.xml parsing) rather than PHPUnit XML config.
+
+### Commits
+
+| Repo | Commit | Message |
+|------|--------|---------|
+| Backend | `c741e11` | ci: add code coverage enforcement with pcov and 80% threshold |
+| Docs | `4803c00` | docs: add code coverage implementation plan |
+
+### Push Status
+
+| Repo | Remote | Head |
+|------|--------|------|
+| Backend | `psswid/triageflow-backend` | `c741e11` |
+| Docs | `psswid/triageflow-docs` | `4803c00` |
+
+---

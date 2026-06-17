@@ -1,0 +1,7 @@
+# Coverage threshold enforced at CI level, not PHPUnit XML
+
+PHPUnit 11.5.55's XSD does not support a `threshold` attribute on the `<phpunit>` element. The attribute appears in some documentation examples but fails XSD validation on PHPUnit 11.x (`DOMDocument::schemaValidate()` error). PHPUnit only supports per-report thresholds on the Crap4J report (`<crap4j threshold="80"/>`), which measures CRAP (Change Risk Anti-Patterns) — a different metric from statement coverage.
+
+Options considered: (1) use `threshold=""` on `<phpunit>` — fails XSD validation, PHPUnit refuses to start, (2) use Crap4J report threshold — measures CRAP score (complexity × coverage), not raw coverage percentage, so 80% CRAP threshold does not map to 80% statement coverage, (3) enforce at CI level via GitHub Actions step that parses `clover.xml` with `simplexml_load_file()` and exits non-zero when `coveredstatements/statements < 0.80`.
+
+CI-level enforcement is decoupled from PHPUnit version quirks, works with any coverage driver (pcov/xdebug), and the check is trivially auditable (one `php -r` inline script). The cost: coverage is enforced during CI runs only, not during local `php bin/phpunit` — developers won't get a hard failure without running the CI coverage flag (`--coverage-clover`). This is acceptable for a demo project; for production you could enforce via a git hook or make it a required CI status check on the PR branch.
