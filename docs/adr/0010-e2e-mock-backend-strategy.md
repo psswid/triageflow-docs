@@ -1,0 +1,9 @@
+# E2E tests use full backend mock via Playwright HTTP interception
+
+The frontend calls its own backend API at `localhost:8000` (not OpenRouter directly). To run E2E tests without Docker dependencies, every `/api/*` call is intercepted at the Playwright HTTP level via `page.route()`. The entire backend (Symfony + PostgreSQL + AI) is bypassed.
+
+The alternative — running a real Docker backend in CI — would require PostgreSQL, Symfony, Messenger workers (for async AI calls), a running scheduler, and either a real OpenRouter API key (with 429 rate limits) or a test AI stub. This adds 30-60s of CI startup time, increases flakiness (OpenRouter 429s, Docker timeout), and makes every test a full-stack integration test rather than a focused frontend E2E.
+
+Mocking at the Playwright level means: tests run against the actual built frontend (Vite dev server), the real React components render, real React Router navigations happen, real TanStack Query polling fires, and real localStorage/auth flows execute — but every API call returns controlled, deterministic responses. The tests are fast (5-10s per suite), zero-dependency (no Docker, no AI key), and perfectly reproducible.
+
+The trade-off: mock responses are hand-crafted JSON that may drift from the real backend API contract. This is managed via shared TypeScript type definitions (`api/types.ts`) that both the mock builders in `mocks/*.ts` and the real API client import — and by keeping the mock shapes structurally identical to the real endpoint responses (same `{ data, type, attributes }` JSON:API structure, same field names, same nullability patterns). Contract drift is still possible on backend-only changes (new required fields, renamed attributes), but the risk is low for a portfolio demo where backend and frontend evolve together.

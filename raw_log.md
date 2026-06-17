@@ -1119,3 +1119,72 @@ PHPUnit 11.5.55 XSD does not support `threshold=""` on the `<phpunit>` element (
 | Docs | `psswid/triageflow-docs` | `4803c00` |
 
 ---
+
+## 2026-06-17 — E2E Test Suite (31 Playwright tests) [COMPLETE]
+
+**Plan**: `docs/superpowers/plans/2026-06-17-e2e-test-suite.md`  
+**Verification**: Frontend `pnpm typecheck` 0 errors, `pnpm lint` 0 errors, `pnpm test` 146/146 Vitest pass, `npx playwright test --list` 31/31 discovered — 3 frontend commits pushed.
+
+### Grill Session Decisions (via `grill-with-docs`)
+
+| # | Question | Decision |
+|---|----------|----------|
+| Q1 | AI mocking strategy | **Full backend mock via `page.route()`** — all `/api/*` intercepted at Playwright HTTP level, no Docker backend needed |
+| Q2 | Test user setup | **Dynamic JWT generation** in `fixtures/auth.ts` — `btoa`-encoded payload with `{roles, exp}`, injected into `localStorage('jwt_token')` |
+| Q3 | File organization | 5 spec files (`auth`, `triage`, `submissions`, `public-pages`, `ux`) + shared `mocks/` dir; `basic.spec.ts` merged into `auth.spec.ts` |
+| Q4 | Auth fixture pattern | **Pattern A** — each spec file owns full mock setup in `test.beforeEach` using builder functions from `mocks/*.ts` |
+| Q5 | CI integration | New E2E job in pnpm-based frontend CI with `E2E_MOCK_BACKEND=true` env var (skips Docker webServer) |
+
+### Mock Helpers (3 files, 11 exports)
+
+| File | Exports |
+|------|---------|
+| `src/e2e/mocks/auth.ts` | `createToken`, `makeUserResource`, `makeMeResponse`, `mockRegister`, `mockLogin`, `mockMe` |
+| `src/e2e/mocks/triage.ts` | `createTriageMachine`, `mockTriageApi`, `mockTriageNotFound` |
+| `src/e2e/mocks/submissions.ts` | `mockMySubmissions`, `mockTriageResult` |
+
+Key design: `createTriageMachine()` is a state machine that simulates the triage interview progression (pending → processing → awaiting_answer → completed) across multiple poll cycles, including AI question generation and answer processing.
+
+### Auth Fixture
+
+`src/e2e/fixtures/auth.ts` — `test.extend()` with `authenticatedPage` fixture that mocks `/api/me` + `/api/logout`, injects JWT into localStorage, and navigates to `/triage`. Used by triage, submissions, and ux specs.
+
+### Spec Files (5 files, 31 tests)
+
+| File | Tests | Coverage |
+|------|-------|----------|
+| `auth.spec.ts` | 9 | Register (success, password mismatch, duplicate email), Login (success, invalid credentials, unverified email, unauthenticated redirect), Email verification, Navigation |
+| `triage.spec.ts` | 5 | Quick result, full pipeline (3 turns), 500-char limit, disabled submit, 404 handling |
+| `submissions.spec.ts` | 4 | List display, click-to-result, conversation history, empty state |
+| `public-pages.spec.ts` | 7 | Landing, about, how-it-works, privacy, terms, cookies, contact |
+| `ux.spec.ts` | 6 | Dark mode (toggle + persistence), logout redirect, language switch, cookie consent |
+
+### Config Changes
+
+- **`playwright.config.ts`**: `E2E_MOCK_BACKEND=true` conditionally skips the Docker webServer
+- **`package.json`**: Added `"test:e2e": "playwright test"` script
+- **`.github/workflows/ci.yml`**: New `e2e` job — installs Playwright Chromium, runs with `E2E_MOCK_BACKEND=true`, uploads HTML report on failure
+- **`.gitignore`**: playwright-report/, test-results/ added
+
+### Pre-existing Type Fixes (same session)
+
+4 type errors found and fixed while running `pnpm typecheck` during verification:
+1. **App.tsx**: `RouterProvider` `fallbackElement` prop removed (react-router-dom v7 doesn't support it)
+2. **RouteErrorFallback.tsx**: `TFunction` fallback arg → `{ defaultValue }` options object (i18next breaking change)
+3. **SubmissionDetailPage.tsx**: `ConversationBubble` `t` prop updated for options parameter
+4. **test/setup.ts**: Added missing `scrollMargin` to `MockIntersectionObserver`
+
+### ADR Created
+
+- **ADR-0010** (`docs/adr/0010-e2e-mock-backend-strategy.md`) — Documents the full Playwright HTTP mock approach instead of running a real Docker backend in CI.
+
+### Commits
+
+| Repo | Commit | Message |
+|------|--------|---------|
+| Frontend | `3c47faa` | fix: resolve 4 TypeScript errors blocking pipeline |
+| Frontend | `9a0a73c` | test: add E2E test suite with full backend mock |
+| Frontend | `efa37b7` | chore: gitignore playwright-report, re-resolve pnpm-lock |
+| Docs | `0c6f4e9` | docs: add E2E test suite implementation plan |
+
+---
