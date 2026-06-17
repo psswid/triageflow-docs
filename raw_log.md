@@ -2,10 +2,128 @@
 
 Personal notes, thoughts, and observations during development.
 
+## 2026-06-16 — Issue #12: OpenRouter Rate Limiter [COMPLETE]
+
+**Plan**: `docs/superpowers/plans/2026-06-16-openrouter-rate-limiter.md`  
+**Verification**: Backend 252/252 tests (893 assertions), PHPStan level 5 clean — all 6 commits pushed.
+
+### Design Decisions (via `grill-with-docs`)
+
+| # | Question | Decision |
+|---|----------|----------|
+| Q1 | Fallback model 429 strategy | **Option A** — free fallback switch (no backoff), then fallback gets 3 exponential backoff retries with Retry-After awareness |
+| Q2 | Rate limiter key for user endpoints | User UUID (`$user->getId()->toRfc4122()`) |
+| Q3 | Rate limiter key for admin endpoint | Static `'admin'` (shared bucket across all admins) |
+| Q4 | Synthetic cooldown | **Rate limiter IS the cooldown** (2/min) |
+| Q5 | Test approach | `$client->disableReboot()` for rate limiter state persistence across requests |
+| Q6 | Test cache pool | `cache.adapter.filesystem` — `cache.adapter.array` gets reset by `services_resetter` even with `disableReboot()` |
+
+### Backend Changes
+
+**`symfony/rate-limiter`** installed, 3 token bucket policies:
+
+| Policy | Rate | Key | Endpoint |
+|--------|------|-----|----------|
+| `triage_submit` | 5/min | User UUID | `POST /api/triage/submit` |
+| `triage_answer` | 5/min | User UUID | `POST /api/triage/{id}/answer` |
+| `synthetic_generate` | 2/min | `'admin'` | `POST /api/admin/synthetic/generate` |
+
+**OpenRouterClient** — `parseRetryAfter(ResponseInterface): ?int` parses numeric + HTTP-date `Retry-After` headers. `calculateBackoff(int, ?int): int` computes exponential backoff (2s base, 30s cap, 500ms jitter) with -1 give-up signal when Retry-After exceeds cap. Fallback model 429s now retry 3 times instead of throwing immediately.
+
+**Controllers** — TriageController guards `submit()` and `answer()` with rate limiter before handler call. SyntheticCaseController guards `generate()`. All return JSON:API 429 with `Retry-After`, `X-Rate-Limit-Limit`, `X-Rate-Limit-Remaining`, `X-Rate-Limit-Reset` headers. Error messages use `$rateLimit->getLimit()` instead of hardcoded values.
+
+### Code Review
+
+**APPROVE_WITH_CHANGES** — 1 Critical, 2 Important, 1 Minor fixed:
+- **C-1**: Null dereference on `HttpExceptionInterface::getResponse()` → extracted `$response` var with null guard
+- **I-5**: Missing X-Rate-Limit-\* headers on `answer()` and `generate()` → normalized to match `submit()`
+- **I-6**: Hardcoded "5"/"2" in error messages → `$rateLimit->getLimit()`
+- **M-1**: `Retry-After: 0` possible → `max(1, $retryAfter)`
+
+### Tests
+
+**TriageControllerTest** — 4 new tests: submit 429 after 5 requests, answer 429, within-limit OK, per-user keys (User A blocked, User B succeeds).
+
+**AdminControllerTest** — 2 new tests: generate 429 after 2 requests, within-limit OK. `ensureSystemUserExists()` helper extracted.
+
+**OpenRouterClientTest** — 4 new tests: numeric Retry-After (10s → dominates backoff), HTTP-date Retry-After (RFC 7231 format), Retry-After exceeding 30s cap (immediate -1/throw, 2 calls not 4), missing Retry-After (pure exponential).
+
+### Commits
+
+| Commit | Message |
+|--------|---------|
+| `8426065` | feat: install and configure symfony/rate-limiter |
+| `824ff31` | feat: add exponential backoff with Retry-After to OpenRouterClient |
+| `102c287` | refactor: extract backoff constants per code quality review |
+| `73ceb17` | feat: wire RateLimiterFactory into controllers |
+| `a3a9904` | fix: address code review issues (C-1, I-5, I-6, M-1) |
+| `1462b34` | test: add rate limiting tests for synthetic generation and triage submission |
+
 ---
 
-## 2026-05-26
 
+**Scope**: Lighthouse + eslint-plugin-jsx-a11y accessibility audit across all 15 pages of the app. No axe DevTools (user rejected free trial). No manual keyboard/screen reader audit (deferred to future).
+
+### Decisions
+
+- **Tooling**: Lighthouse (built-in, open source) + eslint-plugin-jsx-a11y instead of axe DevTools. User preference for fully free tools.
+- **Approach**: HITL — user ran Lighthouse on all 15 pages, saved 15 HTML reports to `docs/accesibility_reports/*.html`. I extracted all issues and delegated fixes to OpenFrontendSpecialist (parallel batch).
+- **Fixes verified by user**: Minimum Lighthouse score **91/100** (was 83).
+
+### ESLint Integration
+
+- Installed `eslint-plugin-jsx-a11y` (with `--legacy-peer-deps` for ESLint 10 compat)
+- Installed `@testing-library/dom` (was dropped by ESLint 10 peer dep resolution)
+- **3 violations** found and fixed:
+  1. `MarketingHeader.tsx:77` — backdrop `<div>` with `onClick` but no keyboard handler → converted to `<button>` with `aria-label`, Enter/Space handler
+  2. `AnswerInput.tsx:64` — `autoFocus` prop → replaced with `ref` + `useEffect` focus
+- **Final**: ESLint lint clean, 0 errors 0 warnings.
+
+### 6 Lighthouse Issues Fixed (17 files, parallel via OpenFrontendSpecialist)
+
+| Issue | Pages | Root Cause | Fix |
+|-------|-------|-----------|-----|
+| Prohibited ARIA: `aria-label` on `<div>` without `role` | 15/15 | `ToastProvider.tsx` toast container div | Added `role="status"` |
+| Insufficient color contrast (CTA buttons) | 14/15 | `accent-500` (#14b8a6) on white (2.48:1) | `accent-500` → `accent-600` (4.61:1) |
+| Insufficient color contrast (dark mode text) | 14/15 | `gray-400` on near-black surface | `gray-400` → `gray-300` on card backgrounds; `gray-500` → `gray-400` for disclaimers |
+| Insufficient color contrast (login button) | 2/15 | `dark:bg-blue-500` (3.68:1) | `dark:bg-blue-600` (5.26:1) |
+| Missing `<main>` landmark | 3/15 | Auth pages used `<div>` root | login/register/verify-email: `<div>` → `<main>` |
+| Links rely on color only | 2/15 | `hover:underline` only, no always-visible differentiator | Permanent `underline` class, `hover:no-underline` |
+| Heading hierarchy (h1→h3 skip) | 2/15 | StatsGrid/StepCard used `<h3>` without preceding `<h2>` | `<h3>` → `<h2>` |
+
+### Files Changed
+
+**ESLint/accessibility fixes** — 17 files modified across both sublits:
+- `ToastProvider.tsx` — added `role="status"`
+- `Button.tsx` — `dark:bg-blue-500` → `600`
+- `MarketingHeader.tsx:77` — backdrop div → button with keyboard handler
+- `AnswerInput.tsx:64` — autoFocus → ref + useEffect
+- `StatsGrid.tsx` — 2x `<h3>` → `<h2>`, `dark:text-gray-400` → `300`
+- `StepCard.tsx` — `<h3>` → `<h2>`, `dark:text-gray-400` → `300`
+- `LandingPage.tsx` — feature card text `gray-400`→`300`, disclaimer `gray-500`→`400`
+- `HowItWorksPage.tsx` — `dark:text-gray-400`→`300`, `gray-500`→`400`
+- `ContactPage.tsx` — `bg-accent-500`→`600`
+- `CookieBanner.tsx` — `bg-accent-500`→`600`
+- `LoginPage.tsx` — `<div>`→`<main>`, underline on links
+- `RegisterPage.tsx` — `<div>`→`<main>`, underline on links
+- `VerifyEmailPage.tsx` — `<div>`→`<main>`, underline on links
+- `HowItWorksPage.test.tsx` — heading level 3→2
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `npx eslint src/` | ✅ 0 errors, 0 warnings |
+| `npx vitest run` | ✅ 146/146 pass (24 files, 0 regressions) |
+| Lighthouse scores (user-verified) | ✅ Minimum **91/100** (was 83) |
+| ADR needed? | ❌ No — all fixes are standard WCAG compliance, no architectural decisions |
+| Issue #11 comment posted | ✅ Status update at `psswid/triageflow-docs#11` |
+
+### Commit
+
+Frontend `master`: `679376f` — `fix(a11y): resolve 6 Lighthouse accessibility issues across 15 pages`
+
+---
 - **Workflow setup**: Installed Matt Pocock skills (grill-with-docs, handoff, to-issues, zoom-out, caveman), created task template + tools matrix
 - **Repo layout**: triageflow root = docs repo (OpenCode config + docs), backend/ and frontend/ are separate repos
 - **Next**: Start Phase 1 (Foundation) from agents.md
@@ -953,8 +1071,4 @@ Key fixes from code review:
 
 - **ADR-0008** (`docs/adr/0008-dual-purpose-frontend-architecture.md`) — Documents the decision to serve both authenticated SPA and public website from a single React app with two layout wrappers, rather than splitting into separate frontends.
 
-### Next
-
-- Accessibility audit (Issue #11 original Phase 2 HITL)
-- E2E Playwright verification of new public pages
-- Commit and push all 3 repos
+---
